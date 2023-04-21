@@ -285,11 +285,10 @@ freq(dat_unique$application_CODED)
     ##           HEALTH      7      2.36          42.91      2.36          42.91
     ##             HOME      4      1.35          44.26      1.35          44.26
     ##           MENTAL     12      4.05          48.31      4.05          48.31
-    ##            OTHER      1      0.34          48.65      0.34          48.65
-    ##            PSYCH     28      9.46          58.11      9.46          58.11
-    ##           SOCIAL     47     15.88          73.99     15.88          73.99
-    ##        TECHNICAL      4      1.35          75.34      1.35          75.34
-    ##             THER     73     24.66         100.00     24.66         100.00
+    ##            PSYCH     28      9.46          57.77      9.46          57.77
+    ##           SOCIAL     47     15.88          73.65     15.88          73.65
+    ##        TECHNICAL      4      1.35          75.00      1.35          75.00
+    ##             THER     74     25.00         100.00     25.00         100.00
     ##             <NA>      0                               0.00         100.00
     ##            Total    296    100.00         100.00    100.00         100.00
 
@@ -305,7 +304,7 @@ freq(dat_unique$population)
     ## ----------------------------- ------ --------- -------------- --------- --------------
     ##                          ADHD      2      0.68           0.68      0.68           0.68
     ##                           ASD     57     19.26          19.93     19.26          19.93
-    ##        behavioural disorders?      1      0.34          20.27      0.34          20.27
+    ##         behavioural disorders      1      0.34          20.27      0.34          20.27
     ##                cerebral palsy      3      1.01          21.28      1.01          21.28
     ##          cognitively impaired      3      1.01          22.30      1.01          22.30
     ##               cystic fibrosis      1      0.34          22.64      0.34          22.64
@@ -432,6 +431,55 @@ stat.desc(dat_mf$prop)
     ##   0.19656540   0.47209945
 
 ``` r
+generate_pie_chart <- function(df, column_name) {
+  
+  # Create summary table with percentages
+  counts <- table(df[, column_name])
+  dat_counts <- data.frame(counts)
+  dat_counts$percent <- round(100 * dat_counts$Freq / sum(dat_counts$Freq), 2)
+  
+  # Order factor levels based on percentages
+  dat_counts$Var1 <- factor(dat_counts$Var1, levels = dat_counts$Var1[order(dat_counts$percent, decreasing = TRUE)])
+  
+  # Create pie chart with ggplot2
+  pie_chart <- ggplot(dat_counts, aes(x="", y=percent, fill=Var1)) + 
+    geom_bar(width = 1, stat = "identity") +
+    coord_polar(theta = "y") +
+    labs(fill=column_name) +
+    scale_fill_viridis_d(option = "D", direction = 1) +
+    theme_void()
+  
+  return(pie_chart)
+}
+```
+
+### Population Graphs
+
+``` r
+generate_pie_chart(dat_unique, "population")
+```
+
+![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+
+``` r
+ggsave("gg_population.pdf", height = 5)
+```
+
+    ## Saving 7 x 5 in image
+
+``` r
+generate_pie_chart(dat_unique, "application_CODED")
+```
+
+![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-7-2.png)<!-- -->
+
+``` r
+ggsave("gg_application.pdf", height = 5)
+```
+
+    ## Saving 7 x 5 in image
+
+``` r
 dat$age_round <- round(dat$mean_age_CODED)
 
 dat$min_age_round <- round(dat$min_age_CODED)
@@ -471,7 +519,7 @@ gg_age <- ggplot(result, aes(x = age, y = count)) +
 gg_age
 ```
 
-![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-6-1.png)<!-- -->
+![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-8-1.png)<!-- -->
 
 ``` r
 ggsave("gg_age.pdf", height = 5)
@@ -510,7 +558,7 @@ ggplot(age_range, aes(x = min_age, xend = max_age, y = age_range, yend = age_ran
     ## Warning: Using `size` aesthetic for lines was deprecated in ggplot2 3.4.0.
     ## ℹ Please use `linewidth` instead.
 
-![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-7-1.png)<!-- -->
+![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
 
 ``` r
 ggsave("gg_range.pdf", height = 10)
@@ -565,14 +613,15 @@ freq(dat$operation_CODED)
 ``` r
 dat_operation <- dat %>%
   separate_rows(operation_CODED, sep = ",") %>%
-  dplyr::select(operation_CODED)
+  dplyr::select(operation_CODED) %>%
+  mutate(operation_CODED = as.factor(operation_CODED))
 
 freq(dat_operation$operation_CODED)
 ```
 
     ## Frequencies  
     ## dat_operation$operation_CODED  
-    ## Type: Character  
+    ## Type: Factor  
     ## 
     ##               Freq   % Valid   % Valid Cum.   % Total   % Total Cum.
     ## ----------- ------ --------- -------------- --------- --------------
@@ -586,6 +635,70 @@ freq(dat_operation$operation_CODED)
     ##         WoZ     79     24.01         100.00     24.01         100.00
     ##        <NA>      0                               0.00         100.00
     ##       Total    329    100.00         100.00    100.00         100.00
+
+``` r
+operation_counts <- table(dat_operation$operation_CODED)
+
+operation_dat <- data.frame(operation_counts)
+operation_dat$percent <- round(100 * operation_dat$Freq / sum(operation_dat$Freq), 2)
+
+operation_dat$Var1 <- factor(operation_dat$Var1, levels = operation_dat$Var1[order(operation_dat$percent, decreasing = TRUE)])
+
+ggplot(operation_dat, aes(x="", y=percent, fill=Var1)) + 
+  geom_bar(width = 1, stat = "identity") +
+  coord_polar(theta = "y") +
+  labs(fill="Application") +
+  scale_fill_viridis_d(option = "D", direction = 1) +
+  theme_void()
+```
+
+![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-10-1.png)<!-- -->
+
+``` r
+ggsave("gg_operation.pdf", height = 5)
+```
+
+    ## Saving 7 x 5 in image
+
+``` r
+generate_pie_chart(dat_unique, "robot_interaction")
+```
+
+![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-10-2.png)<!-- -->
+
+``` r
+ggsave("gg_interaction.pdf", height = 5)
+```
+
+    ## Saving 7 x 5 in image
+
+``` r
+generate_pie_chart <- function(df, column_name) {
+  
+  # Create summary table with percentages
+  counts <- droplevels(table(df[, column_name]))
+  dat_counts <- data.frame(counts)
+  dat_counts$percent <- round(100 * dat_counts$Freq / sum(dat_counts$Freq), 2)
+  
+  # Order factor levels based on percentages
+  if (any(dat_counts$percent == 0)) {
+    message("No observations for some levels of the variable")
+    return(ggplot() + theme_void())
+  } else {
+    dat_counts$Var1 <- factor(dat_counts$Var1, levels = dat_counts$Var1[order(dat_counts$percent, decreasing = TRUE)])
+    
+    # Create pie chart with ggplot2
+    pie_chart <- ggplot(dat_counts, aes(x="", y=percent, fill=Var1)) + 
+      geom_bar(width = 1, stat = "identity") +
+      coord_polar(theta = "y") +
+      labs(fill=column_name) +
+      scale_fill_viridis_d(option = "D", direction = 1) +
+      theme_void()
+    
+    return(pie_chart)
+  }
+}
+```
 
 ``` r
 dat_robots <- dat %>%
@@ -690,7 +803,7 @@ gg_robots <- ggplot(robot_counts, aes(x = robot_CODED, y = n)) +
 gg_robots
 ```
 
-![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-9-1.png)<!-- -->
+![](CRI_Replication_Git_files/figure-gfm/unnamed-chunk-12-1.png)<!-- -->
 
 ``` r
 ggsave("gg_robots.pdf", height = 5)
