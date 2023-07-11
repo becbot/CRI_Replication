@@ -1,0 +1,927 @@
+---
+title: "CRI_Replication_Git"
+author: "Rebecca"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Required Packages
+```{r echo=T, results='hide', message=FALSE, warning=FALSE, include=FALSE}
+require(tidyverse)
+require(summarytools)
+require(pastecs)
+require(skimr)
+require(Hmisc)
+require(rstatix)
+require(car)
+require(gmodels)
+require(ggpubr)
+require(RColorBrewer)
+require(scales)
+require(ggimage)
+```
+
+#Session Paramters
+```{r}
+options(scipen=999)
+```
+
+# Import Data
+```{r echo=F}
+url <- "https://docs.google.com/spreadsheets/d/e/2PACX-1vRXlLy7vNXNWyB3OuxRtPWCdqo056Piu17E9x9QP0lVs33NVuZl3YFnS6ToUyLKOpQ6kRu2ZFip-PpZ/pub?gid=0&single=true&output=csv"
+dat <- read.csv(url, header = TRUE)
+
+dat <- dat[2:326,]
+
+
+# Dataframe for only unique studies
+dat_unique <- dat %>%
+  filter(expt_num == 1)
+
+```
+
+# Descriptives
+## Open Science
+```{r}
+freq(dat_unique$open_access)
+freq(dat_unique$ethics)
+freq(dat_unique$consent)
+freq(dat_unique$prereg)
+freq(dat_unique$disciplines_availability)
+
+dat_consent <- dat_unique %>%
+  filter(consent == 1 & ethics == 0)
+
+freq(dat_unique$discipline1_CODED)
+
+dat_discipline <- dat_unique %>%
+  dplyr::select(discipline1_CODED:discipline4_CODED)
+
+discipline_tab <- as.data.frame(table(unlist(dat_discipline)))
+
+
+freq(dat_unique$open_materials)
+freq(dat_unique$open_measures)
+freq(dat_unique$open_code)
+freq(dat_unique$code_repository)
+freq(dat_unique$open_materials)
+freq(dat_unique$open_data)
+freq(dat_unique$study_repository)
+```
+
+## Population
+```{r}
+freq(dat_unique$application_CODED)
+freq(dat_unique$population)
+freq(dat_unique$country_CODED)
+```
+
+
+### Sample Size
+```{r}
+dat$N_CODED <- as.numeric(dat$N_CODED)
+
+freq(dat$N_CODED)
+
+skim(dat$mean_age_CODED)
+stat.desc(dat$mean_age_CODED)
+
+
+skim(dat$N_CODED)
+stat.desc(dat$N_CODED)
+
+freq(dat$age_gender_after_exclusion)
+
+dat_gender <- dat %>%
+  dplyr::select(female_reported_CODED, male_reported_CODED, non_binary_reported_CODED, not_specified_reported_CODED) %>% 
+  replace(. == "N.R.", NA)
+
+dat_gender <- sapply(dat_gender, as.numeric)
+dat_gender <- as.data.frame(dat_gender)
+
+proportions <- colSums(dat_gender, na.rm = T) / sum(dat_gender, na.rm = T)
+proportions
+
+dat_mf <- dat_gender %>%
+  filter(non_binary_reported_CODED == 0 & not_specified_reported_CODED == 0)
+
+dat_mf$prop <- dat_mf$male_reported_CODED / (dat_mf$male_reported_CODED + dat_mf$female_reported_CODED)
+stat.desc(dat_mf$prop)
+
+```
+
+
+
+```{r}
+dat$age_round <- round(dat$mean_age_CODED)
+
+dat$min_age_round <- round(dat$min_age_CODED)
+dat$max_age_round <- round(dat$max_age_CODED)
+
+
+# Filter out rows with non-numeric values in min_age and max_age columns
+dat_age <- dat %>%
+  filter(!is.na(as.numeric(min_age_round)) & !is.na(as.numeric(max_age_round))) %>%
+  mutate(min_age = as.numeric(min_age_round), max_age = as.numeric(max_age_round)) %>%
+  dplyr::select(ID, expt_num, mean_age_CODED, min_age_round, max_age_round) %>%
+  mutate(ID_unique = paste0(ID, "_", expt_num))
+
+# Create a sequence of ages from min_age to max_age for each row
+dat_age_TOTAL <- dat_age %>%
+  mutate(ages = map2(min_age_round, max_age_round, ~seq(.x, .y, by = 1))) %>%
+  unnest(ages)
+
+# Count the occurrences of each age
+result <- dat_age_TOTAL %>%
+  count(ages)
+
+# Rename the columns
+result <- result %>%
+  rename(age = ages, count = n)
+
+result$percent <- round(100 * result$count / sum(result$count), 2)
+
+# Create histogram
+gg_age <- ggplot(result, aes(x = age, y = percent)) +
+  geom_bar(stat = "identity", fill = "#2166AC", colour = "black", width = 1) +
+  labs(x = "Age", y = "Percntage of studies with this age") +
+  ylim(0, 12) +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 9),
+        axis.title.y = element_text(face = "bold", size = 9))
+
+gg_age
+
+ggsave("gg_age.pdf", height = 5)
+```
+
+
+
+## Robots / Interaction
+```{r}
+freq(dat$robot_number)
+
+freq(dat$operation_CODED)
+
+dat_operation <- dat %>%
+  separate_rows(operation_CODED, sep = ",") %>%
+  dplyr::select(operation_CODED) %>%
+  mutate(operation_CODED = as.factor(operation_CODED))
+
+freq(dat_operation$operation_CODED)
+
+operation_counts <- table(dat_operation$operation_CODED)
+
+operation_dat <- data.frame(operation_counts)
+operation_dat$percent <- round(100 * operation_dat$Freq / sum(operation_dat$Freq), 2)
+
+operation_dat$Var1 <- factor(operation_dat$Var1, levels = operation_dat$Var1[order(operation_dat$percent, decreasing = TRUE)])
+```
+
+
+
+
+```{r}
+dat_robots <- dat %>%
+  separate_rows(robot_model, sep = ",") %>%
+  dplyr::select(robot_model)
+
+robot_freq <- freq(dat_robots$robot_model)
+
+value_counts <- dat_robots %>%
+  count(robot_model)
+
+# Identify values that appear only once
+values_to_replace <- value_counts %>%
+  filter(n <= 5) %>%
+  pull(robot_model)
+
+#Replace values that appear only once with "Other"
+dat_robots <- dat_robots %>%
+  mutate(robot_CODED = if_else(robot_model %in% values_to_replace, "Other", robot_model))
+
+freq(dat_robots$robot_CODED)
+
+robot_counts <- dat_robots %>%
+  count(robot_CODED) %>%
+  arrange(-n) %>%
+  mutate(robot_CODED = factor(robot_CODED, levels = robot_CODED))
+```
+# Pie Graphs
+## Pie Graph Functions
+```{r}
+create_counts_dataframe <- function(df, column_name) {
+  # Create summary table with counts
+  counts <- table(df[, column_name])
+  dat_counts <- data.frame(counts)
+  
+  # Calculate percentages
+  dat_counts$percent <- round(100 * dat_counts$Freq / sum(dat_counts$Freq), 2)
+  
+  # Order factor levels based on percentages
+  dat_counts$Var1 <- factor(dat_counts$Var1, levels = dat_counts$Var1[order(dat_counts$percent, decreasing = TRUE)])
+  
+  return(dat_counts)
+}
+  
+colour_mapping2 <- c("Reported" = "#F4A582",
+                   "Not Reported" = "#B2182B")
+
+colour_mapping3 <- c("Reported" = "#F4A582",
+                   "Partially Reported" = "#D6604D",
+                   "Not Reported" = "#B2182B")
+
+display.brewer.all(8, type = "div", colorblindFriendly = TRUE)
+display.brewer.pal(8, "RdBu")
+brewer.pal(12, "RdBu")
+
+rdbu_colours <- c("#67001F", "#B2182B", "#D6604D", "#F4A582", "#FDDBC7", "#F7F7F7", "#D1E5F0", "#92C5DE", "#4393C3", "#2166AC", "#053061", "#053061" )
+
+other_color <- "grey"  
+```
+
+
+```{r}
+create_pie_chart <- function(data, legend_label, nudge_label = 1, label_spacing = 0.25, colour_mapping, line_width = 1, text_size = 5, plot_title = NULL) {
+  # Reorder the data based on the percentage in descending order
+  data <- data[order(-data$percent), ]
+
+  # Create a custom color palette with the specified mapping
+  custom_palette <- colour_mapping[match(data[[1]], names(colour_mapping))]
+
+  data |>
+    transmute(
+      Var1 = factor(.data[[1]], levels = unique(.data[[1]])),  # Maintain the desired order of levels
+      percent,
+      cuml_pct = cumsum(percent)
+    ) |>
+    ggplot(aes(x = 0, y = percent, fill = Var1)) +
+    geom_col(width = 1) +
+    coord_polar(theta = "y") +
+    labs(fill = legend_label, title = plot_title) +
+    scale_fill_manual(values = custom_palette, breaks = unique(Var1)) +
+    geom_segment(
+      aes(
+        y = cuml_pct - percent / 2,
+        yend = cuml_pct - percent / 2,
+        x = 0.2,
+        xend = nudge_label * (1 - label_spacing)
+      ),
+      size = line_width
+    ) +
+    geom_text(
+      aes(y = cuml_pct - percent / 2, label = paste0(percent, "%")),
+      nudge_x = nudge_label,
+      size = text_size
+    ) +
+    theme_void() +
+    theme(
+      legend.title = element_text(face = "bold"),
+      plot.title = element_text(hjust = 0.5, margin = margin(b = 0))
+    )
+}
+
+```
+
+
+```{r}
+create_bar_graph <- function(data, right_var, other_color, x_label, y_label, legend_title) {
+  data$Var1 <- factor(data$Var1, levels = levels(data$Var1))
+  
+  right_category <- data %>% filter(Var1 == right_var)
+  
+  # Remove the right variable category from the main data frame
+  data <- data %>% filter(Var1 != right_var) %>%
+    mutate(Var1 = fct_reorder(Var1, desc(percent)))
+  
+  custom_percent_label <- function(labels) {
+    paste0(labels, "%")
+  }
+  
+  # Filter out categories with zero frequency or percentage
+  data <- data %>% filter(percent != 0)
+  
+  # Determine the number of categories and colors
+  n_colors <- length(levels(data$Var1))
+  max_n <- 11  # Maximum number of colors in the palette
+  
+  # Create the color palette with repeating "RdBu" colors for left categories
+  colors <- rep_len(brewer.pal(n = max_n, name = "RdBu"), n_colors)
+  
+  # Map the right variable category to "other color"
+  colors[n_colors] <- other_color
+  
+  ggplot(data, aes(x = Var1, y = percent, fill = Var1)) +
+    geom_bar(stat = "identity", width = 0.9) +
+    labs(x = x_label, y = y_label, fill = legend_title) +
+    theme(
+      panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+      panel.background = element_rect(fill = "white"),
+      axis.title.x = element_text(face = "bold", size = 9),
+      axis.title.y = element_text(face = "bold", size = 9),
+      legend.title = element_text(face = "bold", size = 9)
+    ) +
+    # Plot the right variable column with increased spacing using position_nudge
+    geom_col(data = right_category, aes(x = right_var, y = percent, fill = Var1), width = 0.9) +
+    scale_fill_manual(values = colors,
+                      breaks = levels(data$Var1),
+                      labels = levels(data$Var1),
+                      drop = TRUE) +  # Exclude categories with zero frequency/percentage from legend
+    scale_x_discrete(limits = c(levels(data$Var1), right_var)) +
+    scale_y_continuous(labels = custom_percent_label)
+}
+
+```
+
+## Graphs Data
+```{r}
+dat_pies_unique <- dat_unique %>%
+  mutate(country_CODED = if_else(country_CODED != "N.R.", "Reported", "Not Reported", country_CODED)) %>%
+  mutate(mean_age_CODED = if_else(mean_age_CODED != "N.R.", "Reported", "Not Reported", mean_age_CODED)) %>%
+  mutate(gender_reporting = if_else(gender_reporting != "N.R.", "Reported", "Not Reported", gender_reporting)) %>%
+  mutate(disciplines_availability = dplyr::recode(disciplines_availability,
+                           "0" = "Not Reported",
+                           "0.5" = "Partially Reported",
+                           "1" = "Reported")) %>% 
+  mutate(disciplines_availability = factor(disciplines_availability, levels = c("Not Reported", "Partially Reported", "Reported"))) %>%
+  mutate(across(starts_with("open_"), ~ dplyr::recode(., "0.5" = "Partially Available",
+                                               "0" = "Not Available",
+                                               "1" = "Available",
+                                               "N.A." = "Not Applicable",
+                                               "UpnReq" = "Upon Request")))  %>%
+    mutate(ethics = dplyr::recode(ethics,
+                           "0" = "Not Reported",
+                           "1" = "Reported")) %>% 
+    mutate(consent = dplyr::recode(consent,
+                           "0" = "Not Reported",
+                           "1" = "Reported")) %>% 
+    mutate(prereg = dplyr::recode(prereg,
+                           "0" = "Not Pre-Registered",
+                           "1" = "Pre-Registered"))
+
+levels(dat_pies_unique$disciplines_availability)
+
+dat_pies <- dat %>%
+  mutate(mean_age_CODED = if_else(mean_age_CODED != "N.R.", "Reported", "Not Reported", mean_age_CODED)) %>%
+  mutate(gender_reporting = if_else(gender_reporting != "N.R.", "Reported", "Not Reported", gender_reporting)) %>%
+  mutate(N_CODED = if_else(N_CODED != "N.R.", "Reported", "Not Reported", N_CODED)) %>%
+  mutate(robot_CODED = if_else(robot_CODED != "N.R.", "Reported", "Not Reported", robot_CODED)) %>%
+  mutate(robot_interaction = if_else(robot_interaction != "N.R.", "Reported", "Not Reported", robot_interaction)) %>%
+  mutate(length_CODED = if_else(length_CODED != "0", "Reported", "Not Reported", length_CODED)) %>%
+  mutate(number_coded = dplyr::recode(number_coded, "M" = "Multiple", "S" = "Single", "N.R." = "Not Reported")) %>%
+  mutate(operation_CODED = if_else(operation_CODED != "N.R.", "Reported", "Not Reported", operation_CODED))
+
+```
+
+
+
+### Countries
+```{r}
+gg_country <- create_counts_dataframe(dat_pies_unique, "country_CODED")
+
+gg_country_p <- create_pie_chart(
+  gg_country, 
+  "Country", nudge_label = 0.8, label_spacing = 0.2,
+  colour_mapping = colour_mapping2, line_width = 1, text_size = 5, plot_title = "Country")
+
+gg_country_p
+```
+
+### Disciplines 
+```{r} 
+gg_disciplines <- create_counts_dataframe(dat_pies_unique, "disciplines_availability") %>%
+  mutate(Var1 = factor(Var1, levels = c("Reported", "Partially Reported", "Not Reported")))
+
+gg_disciplines_p <- create_pie_chart(
+  gg_disciplines, 
+  "Disciplines", nudge_label = 1.1, label_spacing = 0.35,
+  colour_mapping = colour_mapping3, line_width = 1, text_size = 5, plot_title = "Disciplines")
+
+gg_disciplines_p
+
+overview_pies <- ggarrange(gg_country_p, gg_disciplines_p, ncol=2, widths = c(1, 1.5))
+
+overview_pies
+
+ggsave("overview_pies.pdf", width = 17)
+```
+
+```{r}
+gg_discipline1 <- create_counts_dataframe(dat_unique, "discipline1_CODED") %>%
+   group_by(Var1) %>%
+  mutate(Var1 = as.character(Var1)) %>%
+  mutate(Var1 = ifelse(percent < 1, "Other", Var1)) %>%
+  summarise(Freq = sum(Freq), percent = sum(percent)) %>%
+ mutate(Var1 = fct_reorder(Var1, desc(percent)))
+
+new_row <- data.frame(Var1 = "", Freq = 0, percent = 0)
+gg_discipline1 <- rbind(gg_discipline1, new_row)
+
+create_bar_graph(gg_discipline1, "N.R.", "grey","First Author Discipline", "Percentage of Total Papers", "Discipline") 
+
+discipline_bar
+
+scale_x_discrete(labels = c("Computer Science", "Psychology", "Engineering", "Education", "Medecine", "Communication", "Design", "Other","Art", "Humanities", "Literature", "N.R."))
+  
+
+ggsave("discipline_bar.pdf", width = 15)
+```
+
+```{r}
+discipline_tab$percent <- round(100 * discipline_tab$Freq / sum(discipline_tab$Freq), 2)
+
+discipline_tab <- discipline_tab[-1, ]
+
+discipline_tab <- discipline_tab %>%
+  group_by(Var1) %>%
+  mutate(Var1 = as.character(Var1)) %>%
+  mutate(Var1 = ifelse(percent < 1, "Other", Var1)) %>%
+  summarise(Freq = sum(Freq), percent = sum(percent)) %>%
+ mutate(Var1 = fct_reorder(Var1, desc(percent)))
+
+discipline_tab <- rbind(discipline_tab, new_row)
+
+create_bar_graph(discipline_tab, "N.R.", "grey", "Discipline", "Percentage of Total Papers", "Discipline")
+
+ggsave("all_disciplines.pdf", width = 15)
+```
+### Application
+```{r}
+gg_application <- create_counts_dataframe(dat_pies_unique, "application_CODED")
+
+ggplot(gg_application, aes(x = Var1, y = percent, fill = Var1)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "RdBu") +
+  labs(x = "Application", y = "Percentage of Total Papers", fill = "Application") +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 9),
+        axis.title.y = element_text(face = "bold", size = 9))
+
+ggsave("application_bar.pdf", width = 15)
+```
+
+### Population
+```{r}
+gg_population <- create_counts_dataframe(dat_pies_unique, "population") %>%
+  group_by(Var1) %>%
+  mutate(Var1 = as.character(Var1)) %>%
+  mutate(Var1 = ifelse(percent < 1, "Other", Var1)) %>%
+  summarise(Freq = sum(Freq), percent = sum(percent)) %>%
+ mutate(Var1 = fct_reorder(Var1, desc(percent)))
+
+ggplot(gg_population, aes(x = Var1, y = percent, fill = Var1)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "RdBu") +
+  scale_x_discrete(labels = c("Neurotypical", "ASD", "Mixed", "Other", "Multiple\nIrregularities", "Cerbral\nPalsy", "Cognitively\nImpaired")) +
+  labs(x = "Population", y = "Percentage of Total Papers", fill = "Population") +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 9),
+        axis.title.y = element_text(face = "bold", size = 9))
+
+
+create_bar_graph(gg_population, "Other", "grey", "Population", "Percentage of Total Papers", "Population")
+
+ggsave("population_bar.pdf", width = 15, height = 7)
+```
+
+
+### Gender
+```{r}
+gg_gender <- create_counts_dataframe(dat_pies, "gender_reporting")
+
+freq(dat_pies$gender_reporting)
+
+gg_gender_p <- create_pie_chart(
+  gg_gender, 
+  "Gender", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_mapping2, line_width = 1, text_size = 5, plot_title = "Gender")
+
+gg_gender_p
+```
+
+#### Graph of Proportions
+```{r}
+counts_mf <- hist(dat_mf$prop, breaks = 20, plot = FALSE)$counts
+total_mf <- sum(counts_mf)
+percentages_mf <- counts_mf / total_mf * 100
+
+ggplot(dat_mf, aes(x = prop)) +
+  geom_histogram(aes(y = after_stat(count)/sum(after_stat(count))), 
+                 fill = "#2166AC", colour = "black", bins = 20) +
+  labs(x = "Proportion", y = "Percentage of Total Studies") +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(labels = scales::percent) +
+  theme(
+    panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+    panel.background = element_rect(fill = "white"),
+    axis.title.x = element_text(face = "bold", size = 9),
+    axis.title.y = element_text(face = "bold", size = 9)
+  )
+
+  
+
+ggsave("gg_gender.pdf", height = 5)
+
+```
+
+
+### Age
+```{r}
+gg_age <- create_counts_dataframe(dat_pies, "mean_age_CODED")
+
+gg_age_p <- create_pie_chart(
+  gg_age, 
+  "Reporting", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_mapping2, line_width = 1, text_size = 5, plot_title = "Age")
+
+#theme(plot.title = element_text(hjust = 0.5, margin = margin(b = -85)))
+
+
+gg_age_p
+
+```
+
+### Sample Size
+```{r}
+gg_sample <- create_counts_dataframe(dat_pies, "N_CODED")
+
+gg_sample_p <- create_pie_chart(
+  gg_sample, 
+  "Sample Size", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_mapping2, line_width = 1, text_size = 5, plot_title = "Sample Size")
+
+gg_sample_p
+
+
+dat_pies_unique$N_CODED <- as.numeric(dat_pies_unique$N_CODED)
+
+dat_sample <- dat_pies_unique %>%
+  dplyr::filter(N_CODED <= 50)
+
+ggplot(dat_pies_unique, aes(x = N_CODED)) +
+  geom_histogram(aes(y = after_stat(count)/sum(after_stat(count))), 
+                 fill = "#2166AC", colour = "black", bins = 50) +
+  labs(x = "Sample Size", y = "Percentage of Total Studies (N = 325)") +
+  scale_x_continuous(limits = c(1, 600), breaks = seq(0, 600, 50)) +
+  scale_y_continuous(labels = scales::percent) +
+   theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 9),
+        axis.title.y = element_text(face = "bold", size = 9))
+
+ggsave("sample_sizes.pdf", width = 10)
+
+dat_sample <- dat_pies_unique %>%
+  dplyr::filter(N_CODED <= 100)
+
+ggplot(dat_sample, aes(x = N_CODED)) +
+  geom_histogram(aes(y = after_stat(count)/sum(after_stat(count))),
+                 fill = "#2166AC", colour = "black", bins = 50) +
+  labs(x = "Sample Size", y = "Percentage of Total Studies (N = 325)") +
+  scale_x_continuous(limits = c(1, 100), breaks = seq(0, 100, 5)) +
+  scale_y_continuous(labels = scales::percent) +
+   theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 9),
+        axis.title.y = element_text(face = "bold", size = 9))
+
+ggsave("sample_100.pdf", width = 10)
+```
+
+## Demographics
+```{r}
+demographic_pies <- ggarrange(gg_age_p, gg_gender_p, gg_sample_p, ncol=3, common.legend = TRUE, legend = "bottom", widths = c(1, 1, 1), align = "h")
+
+demographic_pies
+
+ggsave("demographic_pies.pdf", width = 17)
+```
+
+### Length / Number of Interaction(s)
+```{r}
+gg_length <- create_counts_dataframe(dat_pies, "length_CODED")
+gg_length_p <- create_pie_chart(
+  gg_length, 
+  "Length of Interaction", nudge_label = 1, label_spacing = 0.3,
+  colour_mapping = colour_mapping3, line_width = 1, text_size = 5, plot_title = "Length of Interactions")
+
+colour_mapping_sessions <- c("Single" = "#F4A582",
+                   "Multiple" = "#D6604D",
+                   "Not Reported" = "#B2182B")
+
+gg_number <- create_counts_dataframe(dat_pies, "number_coded") %>%
+  mutate(Var1 = factor(Var1, (levels = c("Single", "Not Reported", "Multiple"))))
+
+gg_number_p <- create_pie_chart(
+  gg_number, 
+  "Number of Interactions", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_mapping_sessions, line_width = 1, text_size = 5, plot_title = "Number of Interactions")
+
+interaction_pies <- ggarrange(gg_length_p, gg_number_p, ncol=2)
+
+ggsave("interaction_pies.pdf", width = 15)
+```
+
+
+
+### Robots
+```{r}
+gg_robot_model <- create_counts_dataframe(dat_pies, "robot_CODED")
+gg_robot_model_p <- create_pie_chart(
+  gg_robot_model, 
+  "Reporting", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_mapping2, line_width = 1, text_size = 5, plot_title = "Robot Model")
+
+gg_robot_operation <- create_counts_dataframe(dat_pies, "operation_CODED")
+gg_robot_operation_p <- create_pie_chart(
+  gg_robot_operation, 
+  "Robot Operation", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_mapping2, line_width = 1, text_size = 5, plot_title = "Robot Operation")
+
+gg_robot_interaction <- create_counts_dataframe(dat_pies, "robot_interaction")
+gg_robot_interaction_p <- create_pie_chart(
+  gg_robot_interaction, 
+  "Robot Operation", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_mapping2, line_width = 1, text_size = 5, plot_title = "Type of Interaction")
+
+robot_pies <- ggarrange(gg_robot_model_p, gg_robot_operation_p, gg_robot_interaction_p, ncol=3, common.legend = TRUE, legend = "bottom")
+
+robot_pies
+
+ggsave("robot_pies.pdf", width = 17)
+```
+
+```{r}
+robot_counts <- robot_counts %>%
+   mutate(percentage = n / sum(n) * 100)
+
+robot_counts$Var1 <- robot_counts$robot_CODED
+robot_counts$percent <- robot_counts$percentage
+
+robot_row <- data.frame(robot_CODED = "", n = 0, percentage = 0, Var1 = "", percent = 0)
+
+robot_counts <- rbind(robot_counts, robot_row)
+
+create_bar_graph(robot_counts, "N.R.", "grey", "Robot Model", "Percentage of Total Studies", "Robot Model") +
+geom_image(data = data.frame(x = "Nao", y = 40, image = "full-nao.png"),
+            aes(x = x, y = y, image = image, size = 0.15), inherit.aes = FALSE) +
+geom_image(data = data.frame(x = "Pepper", y = 12, image = "pepper.png"),
+            aes(x = x, y = y, image = image, size = 0.15), inherit.aes = FALSE) +
+  geom_image(data = data.frame(x = "Cozmo", y = 6, image = "cozmo.png"),
+            aes(x = x, y = y, image = image, size = 0.1), inherit.aes = FALSE) +
+  geom_image(data = data.frame(x = "Zeno", y = 7.5, image = "zeno.jpg"),
+            aes(x = x, y = y, image = image, size = 0.1), inherit.aes = FALSE) +
+  geom_image(data = data.frame(x = "Robovie", y = 7.5, image = "robovie.png"),
+            aes(x = x, y = y, image = image, size = 0.1), inherit.aes = FALSE) +
+  geom_image(data = data.frame(x = "Furhat", y = 5, image = "furhat.jpg"),
+            aes(x = x, y = y, image = image, size = 0.2), inherit.aes = FALSE) +
+            scale_size_identity()
+
+ggsave("robot_models.pdf", width = 15)
+```
+
+```{r}
+dat_moi <- create_counts_dataframe(dat, "robot_interaction") %>%
+    mutate(Var1 = dplyr::recode(Var1,
+                           "real-life" = "Real Life",
+                           "video" = "Reported",
+                           "life-mediated" = "Live-Mediated",
+                           "picture" = "Picture",
+                           "virtual-agent" = "Virtual Agent",
+                           "augmented-reality" = "Augmented Reality",
+                           "hybrid" = "Hybrid"))
+  
+
+create_bar_graph(dat_moi, "N.R.", "grey", "Mode of Interaction", "Percentage of Total Studies (N = 325)", "Mode of Interaction")
+
+ggsave("interaction_mode.pdf", width = 15)
+```
+
+```{r}
+operation_dat <- operation_dat %>%
+    mutate(Var1 = dplyr::recode(Var1,
+                           "WoZ" = "Wizard of Oz",
+                           "A" = "Autonomous",
+                           "PS" = "Pre-scripted",
+                           "TO" = "Tele-Operated",
+                           "SA" = "Semi-Autonomous",
+                           "mixed" = "Mixed",
+                           "N.A." = "Not Applicable")) 
+
+operation_dat <- rbind(operation_dat, new_row)
+  
+
+create_bar_graph(operation_dat, "N.R.", "grey", "Mode of Operation", "Percentage of Total Number of Studies", "Mode of Operation")
+
+ggsave("robot_operation.pdf", width = 15)
+```
+
+### Open Science
+```{r}
+gg_ethics <- create_counts_dataframe(dat_pies_unique, "ethics")
+
+
+colour_ethics <- c("Reported" = "#F4A582",
+                   "N.A." = "#D6604D",
+                   "Not Reported" = "#B2182B")
+
+gg_ethics_p <- create_pie_chart(
+  gg_ethics, 
+  "Ethical Approval", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_ethics, line_width = 1, text_size = 5, plot_title = "Ethical Approval")
+
+gg_consent <- create_counts_dataframe(dat_pies_unique, "consent")
+
+gg_consent_p <- create_pie_chart(
+  gg_consent, 
+  "Informed Consent", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_mapping2, line_width = 1, text_size = 5, plot_title = "Informed Consent")
+
+
+gg_open_access <- create_counts_dataframe(dat_pies_unique, "open_access")
+
+gg_open_access$Var1 <- factor(gg_open_access$Var1, levels = c("Available", "Not Available"))
+
+colour_access <- c("Available" = "#F4A582",
+                   "Not Available" = "#B2182B")
+
+gg_open_access_p <- create_pie_chart(
+  gg_open_access, 
+  "Open Access", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_access, line_width = 1, text_size = 5, plot_title = "Open Access")
+
+gg_prereg <- create_counts_dataframe(dat_pies_unique, "prereg") %>%
+  mutate(Var1 = factor(Var1, (levels = c("Pre-Registered", "Not Pre-Registered"))))
+
+colour_prereg <- c("Pre-Registered" = "#F4A582",
+                   "Not Pre-Registered" = "#B2182B")
+
+gg_prereg_p <- create_pie_chart(
+  gg_prereg, 
+  "Pre-Registration", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_prereg, line_width = 1, text_size = 5, plot_title = "Pre-Registration")
+
+open_pies <- ggarrange(gg_ethics_p, gg_consent_p, gg_open_access_p, gg_prereg_p, ncol=2, nrow=2)
+
+ggsave("ethics_pies.pdf", width = 20, height = 17)
+```
+
+# IN PROGRESS FUNCTION
+```{r}
+create_pie_chart <- function(data, legend_label, nudge_label = 1, label_spacing = 1, colour_mapping, line_width = 1, text_size = 5, plot_title = NULL, legend_order) {
+  # Reorder the data based on the desired order of the legend
+  data$Var1 <- factor(data$Var1, levels = legend_order)
+  
+  # Create a custom color palette with the specified mapping
+  custom_palette <- colour_mapping[match(data$Var1, names(colour_mapping))]
+  
+  data <- data %>%
+    arrange(desc(data$Var1)) %>%
+    mutate(label_position = cumsum(percent) - percent / 2)
+  
+  data$label_position <- ifelse(data$label_position > 0.75, data$label_position - 1, data$label_position)
+  
+  ggplot(data, aes(x = 0, y = percent, fill = Var1)) +
+    geom_col(width = 1) +
+    coord_polar(theta = "y") +
+    labs(fill = legend_label, title = plot_title) +
+    scale_fill_manual(values = custom_palette) +
+    geom_segment(
+      aes(y = label_position, yend = label_position, x = 0.2, xend = nudge_label * (1 - label_spacing)),
+      size = line_width
+    ) +
+    geom_text(
+      aes(y = label_position, label = paste0(percent, "%")),
+      nudge_x = nudge_label,
+      size = text_size
+    ) +
+    theme_void() +
+    theme(
+      legend.title = element_text(face = "bold"),
+      plot.title = element_text(hjust = 0.5, margin = margin(b = 0))
+    )
+}
+
+```
+
+
+#CURRENT FUNCTION
+```{r}
+create_pie_chart <- function(data, legend_label, nudge_label = 1, label_spacing = 0.25, colour_mapping, line_width = 1, text_size = 5, plot_title = NULL, legend_order) {
+  # Reorder the data based on the desired order of the legend
+  data$Var1 <- factor(data$Var1, levels = legend_order)
+  
+  # Create a custom color palette with the specified mapping
+  custom_palette <- colour_mapping[match(data$Var1, names(colour_mapping))]
+  
+  data <- data %>%
+    arrange(desc(data$Var1)) %>%
+    mutate(label_position = cumsum(percent) - percent / 2)
+  
+  data$label_position <- ifelse(data$label_position > 0.75, data$label_position - 1, data$label_position)
+  
+  ggplot(data, aes(x = 0, y = percent, fill = Var1)) +
+    geom_col(width = 1) +
+    coord_polar(theta = "y") +
+    labs(fill = legend_label, title = plot_title) +
+    scale_fill_manual(values = custom_palette) +
+    geom_segment(
+      aes(y = label_position, yend = label_position, x = 0.2, xend = nudge_label * (1 - label_spacing)),
+      size = line_width
+    ) +
+    geom_text(
+      aes(y = label_position, label = paste0(percent, "%")),
+      nudge_x = nudge_label,
+      size = text_size
+    ) +
+    theme_void() +
+    theme(
+      legend.title = element_text(face = "bold"),
+      plot.title = element_text(hjust = 0.5, margin = margin(b = 0))
+    )
+}
+
+```
+
+
+```{r}
+colour_open <- c("Available" = "#F4A582",
+                   "Partially Available" = "#D6604D",
+                 "Not Available" = "#B2182B",
+                   "Not Applicable" = "#67001F",
+                 "Upon Request" = "#FDDBC7")
+
+colour_materials <- c("Available" = "#F4A582",
+                   "Partially Available" = "#D6604D",
+                 "Not Available" = "#B2182B")
+
+gg_materials <- create_counts_dataframe(dat_pies_unique, "open_materials")
+
+gg_materials_p <- create_pie_chart(
+  gg_materials, 
+  "Open Materials", nudge_label = 1, label_spacing = 0.25,
+  line_width = 1, text_size = 5, plot_title = "Open Materials",
+  colour_mapping = colour_materials)
+
+
+gg_measures <- create_counts_dataframe(dat_pies_unique, "open_measures")
+
+gg_measures_p <- create_pie_chart(
+  gg_measures,
+  "Open Measures",
+  nudge_label = 1,
+  label_spacing = 0.3,
+  colour_mapping = colour_materials,
+  line_width = 1,
+  text_size = 5,
+  plot_title = "Open Measures")
+
+
+colour_code <- c("Available" = "#F4A582",
+                "Partially Available" = "#D6604D",
+                "Not Available" = "#B2182B",
+                "Not Applicable" = "#67001F")
+
+gg_code <- create_counts_dataframe(dat_pies_unique, "open_code")
+
+gg_code_p <- create_pie_chart(
+  gg_code, 
+  "Open Code", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_code, line_width = 1, text_size = 5, plot_title = "Open Code")
+
+gg_data <- create_counts_dataframe(dat_pies_unique, "open_data")
+gg_data_p <- create_pie_chart(
+  gg_data, 
+  "Open Data", nudge_label = 1, label_spacing = 0.25,
+  colour_mapping = colour_open, line_width = 1, text_size = 5, plot_title = "Open Data")
+
+open_pies <- ggarrange(gg_materials_p, gg_measures_p, gg_code_p, gg_data_p)
+
+open_pies
+
+ggsave("open_pies.pdf", width = 20, height = 17)
+```
+
+
+
+
+
+
+
+
+
+
+
+
