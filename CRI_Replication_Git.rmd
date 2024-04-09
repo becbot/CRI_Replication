@@ -1,0 +1,568 @@
+---
+title: "CRI_Replication_Git"
+author: "Rebecca"
+date: "`r Sys.Date()`"
+output: github_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+# Required Packages
+```{r echo=T, results='hide', message=FALSE, warning=FALSE, include=FALSE}
+require(tidyverse)
+require(summarytools)
+require(pastecs)
+require(skimr)
+require(Hmisc)
+require(rstatix)
+require(car)
+require(gmodels)
+require(ggpubr)
+require(RColorBrewer)
+require(scales)
+require(ggimage)
+```
+
+#Session Paramters
+```{r}
+options(scipen=999)
+```
+
+# Import Data
+```{r echo=F}
+url <- "https://docs.google.com/spreadsheets/d/e/2PACX-1vRXlLy7vNXNWyB3OuxRtPWCdqo056Piu17E9x9QP0lVs33NVuZl3YFnS6ToUyLKOpQ6kRu2ZFip-PpZ/pub?gid=0&single=true&output=csv"
+dat <- read.csv(url, header = TRUE)
+
+dat <- dat[2:326,]
+
+dat_all <- dat[2:326,]
+
+
+# Dataframe for only unique studies
+dat_unique <- dat %>%
+  filter(expt_num == 1)
+
+```
+
+## Graphs Data
+```{r}
+dat_pies_unique <- dat_unique %>%
+  mutate(country_CODED = if_else(country_CODED != "N.R.", "Reported", "Not Reported", country_CODED)) %>%
+  mutate(mean_age_CODED = if_else(mean_age_CODED != "N.R.", "Reported", "Not Reported", mean_age_CODED)) %>%
+  mutate(gender_reporting = if_else(gender_reporting != "N.R.", "Reported", "Not Reported", gender_reporting)) %>%
+  mutate(disciplines_availability = dplyr::recode(disciplines_availability,
+                           "0" = "Not Reported",
+                           "0.5" = "Partially Reported",
+                           "1" = "Reported")) %>% 
+  mutate(disciplines_availability = factor(disciplines_availability, levels = c("Not Reported", "Partially Reported", "Reported"))) %>%
+  mutate(across(starts_with("open_"), ~ dplyr::recode(., "0.5" = "Partially Available",
+                                               "0" = "Not Available",
+                                               "1" = "Available",
+                                               "N.A." = "Not Applicable",
+                                               "UpnReq" = "Upon Request")))  %>%
+    mutate(ethics = dplyr::recode(ethics,
+                           "0" = "Not Reported",
+                           "1" = "Reported")) %>% 
+    mutate(consent = dplyr::recode(consent,
+                           "0" = "Not Reported",
+                           "1" = "Reported")) %>% 
+    mutate(prereg = dplyr::recode(prereg,
+                           "0" = "Not Pre-Registered",
+                           "1" = "Pre-Registered"))
+
+levels(dat_pies_unique$disciplines_availability)
+
+dat_pies <- dat_all %>%
+  mutate(mean_age_CODED = if_else(mean_age_CODED != "N.R.", "Reported", "Not Reported", mean_age_CODED)) %>%
+  mutate(gender_reporting = if_else(gender_reporting != "N.R.", "Reported", "Not Reported", gender_reporting)) %>%
+  mutate(N_CODED = if_else(N_CODED != "N.R.", "Reported", "Not Reported", N_CODED)) %>%
+  mutate(robot_CODED = if_else(robot_CODED != "N.R.", "Reported", "Not Reported", robot_CODED)) %>%
+  mutate(robot_interaction = if_else(robot_interaction != "N.R.", "Reported", "Not Reported", robot_interaction)) %>%
+  mutate(length_CODED = if_else(length_CODED != "0", "Reported", "Not Reported", length_CODED)) %>%
+  mutate(number_coded = dplyr::recode(number_coded, "M" = "Multiple", "S" = "Single", "N.R." = "Not Reported")) %>%
+  mutate(operation_CODED = if_else(operation_CODED != "N.R.", "Reported", "Not Reported", operation_CODED))
+
+```
+
+# Descriptives
+## Open Science
+```{r}
+freq(dat_unique$open_access)
+freq(dat_unique$ethics)
+freq(dat_unique$consent)
+freq(dat_unique$prereg)
+freq(dat_unique$disciplines_availability)
+
+dat_consent <- dat_unique %>%
+  filter(consent == 1 & ethics == 0)
+
+freq(dat_unique$discipline1_CODED)
+
+dat_discipline <- dat_unique %>%
+  dplyr::select(discipline1_CODED:discipline4_CODED)
+
+discipline_tab <- as.data.frame(table(unlist(dat_discipline)))
+
+
+freq(dat_unique$open_materials)
+freq(dat_unique$open_measures)
+freq(dat_unique$open_code)
+freq(dat_unique$code_repository)
+freq(dat_unique$open_materials)
+freq(dat_unique$open_data)
+freq(dat_unique$study_repository)
+```
+
+## Population
+```{r}
+freq(dat_unique$application_CODED)
+freq(dat_unique$population)
+freq(dat_unique$country_CODED)
+```
+
+
+### Sample Size
+```{r}
+dat$N_CODED <- as.numeric(dat$N_CODED)
+
+freq(dat$N_CODED)
+
+skim(dat$mean_age_CODED)
+stat.desc(dat$mean_age_CODED)
+
+
+skim(dat$N_CODED)
+stat.desc(dat$N_CODED)
+
+freq(dat$age_gender_after_exclusion)
+
+dat_gender <- dat %>%
+  dplyr::select(female_reported_CODED, male_reported_CODED, non_binary_reported_CODED, not_specified_reported_CODED) %>% 
+  replace(. == "N.R.", NA)
+
+dat_gender <- sapply(dat_gender, as.numeric)
+dat_gender <- as.data.frame(dat_gender)
+
+proportions <- colSums(dat_gender, na.rm = T) / sum(dat_gender, na.rm = T)
+proportions
+
+dat_mf <- dat_gender %>%
+  filter(non_binary_reported_CODED == 0 & not_specified_reported_CODED == 0)
+
+dat_mf$prop <- dat_mf$male_reported_CODED / (dat_mf$male_reported_CODED + dat_mf$female_reported_CODED)
+stat.desc(dat_mf$prop)
+
+```
+
+
+
+```{r}
+
+dat$mean_age_CODED <- as.numeric(dat$mean_age_CODED)
+dat$age_round <- round(dat$mean_age_CODED)
+
+dat$min_age_CODED <- as.numeric(dat$min_age_CODED)
+dat$max_age_CODED <- as.numeric(dat$max_age_CODED)
+
+dat$min_age_round <- round(dat$min_age_CODED)
+dat$max_age_round <- round(dat$max_age_CODED)
+
+
+# Filter out rows with non-numeric values in min_age and max_age columns
+dat_age <- dat %>%
+  filter(!is.na(as.numeric(min_age_round)) & !is.na(as.numeric(max_age_round))) %>%
+  mutate(min_age = as.numeric(min_age_round), max_age = as.numeric(max_age_round)) %>%
+  dplyr::select(ID, expt_num, mean_age_CODED, min_age_round, max_age_round) %>%
+  mutate(ID_unique = paste0(ID, "_", expt_num))
+
+# Create a sequence of ages from min_age to max_age for each row
+dat_age_TOTAL <- dat_age %>%
+  mutate(ages = map2(min_age_round, max_age_round, ~seq(.x, .y, by = 1))) %>%
+  unnest(ages)
+
+# Count the occurrences of each age
+result <- dat_age_TOTAL %>%
+  count(ages)
+
+# Rename the columns
+result <- result %>%
+  rename(age = ages, count = n)
+
+result$percent <- round(100 * result$count / sum(result$count), 2)
+
+# Create histogram
+gg_age <- ggplot(result, aes(x = age, y = percent)) +
+  geom_bar(stat = "identity", fill = "#2166AC", colour = "black", width = 1) +
+  labs(x = "Age", y = "Percntage of studies with this age") +
+  ylim(0, 12) +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 12),
+        axis.text.x = element_text(size = 12),
+        axis.text.y = element_text(size = 12),
+        axis.title.y = element_text(face = "bold", size = 12))
+
+gg_age
+
+ggsave("gg_age.pdf", height = 5)
+```
+
+
+
+## Robots / Interaction
+```{r}
+freq(dat$robot_number)
+
+freq(dat$operation_CODED)
+
+dat_operation <- dat %>%
+  separate_rows(operation_CODED, sep = ",") %>%
+  dplyr::select(operation_CODED) %>%
+  mutate(operation_CODED = as.factor(operation_CODED))
+
+freq(dat_operation$operation_CODED)
+dat_operation <- as.data.frame(dat_operation)
+
+
+operation_counts <- table(dat_operation$operation_CODED)
+
+operation_dat <- data.frame(operation_counts)
+operation_dat$percent <- round(100 * operation_dat$Freq / sum(operation_dat$Freq), 2)
+
+operation_dat$Var1 <- factor(operation_dat$Var1, levels = operation_dat$Var1[order(operation_dat$percent, decreasing = TRUE)])
+```
+
+
+
+
+```{r}
+dat_robots <- dat %>%
+  separate_rows(robot_model, sep = ",") %>%
+  dplyr::select(robot_model)
+
+robot_freq <- freq(dat_robots$robot_model)
+
+value_counts <- dat_robots %>%
+  count(robot_model)
+
+# Identify values that appear only once
+values_to_replace <- value_counts %>%
+  filter(n <= 5) %>%
+  pull(robot_model)
+
+#Replace values that appear only once with "Other"
+dat_robots <- dat_robots %>%
+  mutate(robot_CODED = if_else(robot_model %in% values_to_replace, "Other", robot_model))
+
+freq(dat_robots$robot_CODED)
+
+robot_counts <- dat_robots %>%
+  count(robot_CODED) %>%
+  arrange(-n) %>%
+  mutate(robot_CODED = factor(robot_CODED, levels = robot_CODED))
+```
+
+
+
+```{r}
+gg_discipline1 <- create_counts_dataframe(dat_unique, "discipline1_CODED") %>%
+   group_by(Var1) %>%
+  mutate(Var1 = as.character(Var1)) %>%
+  mutate(Var1 = ifelse(percent < 1, "Other", Var1)) %>%
+  summarise(Freq = sum(Freq), percent = sum(percent)) %>%
+ mutate(Var1 = fct_reorder(Var1, desc(percent))) %>%
+  mutate(Var1 = dplyr::recode(Var1,
+  "Computer Science" = "Computer\nScience",
+  "Communication" = "Commun-\nication",
+  "Psychology" = "Psych-\nology",
+  "Engineering" = "Engin-\neering"))
+
+new_row <- data.frame(Var1 = "", Freq = 0, percent = 0)
+gg_discipline1 <- rbind(gg_discipline1, new_row)
+
+discipline_first <- create_bar_graph(gg_discipline1, "N.R.", "grey","First Author Discipline", "Percentage of Total Papers", "Discipline") +
+  theme(axis.text.x = element_text(size = 30, angle = 25),
+        axis.text.y = element_text(size = 30),
+        axis.title.y = element_text(size = 30),
+        axis.title.x = element_text(size = 30),
+        legend.position = "none") 
+
+
+discipline_first
+
+ggsave("discipline_first.pdf", height = 10, width = 20)
+
+
+
+
+```
+
+```{r}
+discipline_tab$percent <- round(100 * discipline_tab$Freq / sum(discipline_tab$Freq), 2)
+
+discipline_tab <- discipline_tab[-1, ]
+
+discipline_tab <- discipline_tab %>%
+  group_by(Var1) %>%
+  mutate(Var1 = as.character(Var1)) %>%
+  mutate(Var1 = ifelse(percent < 1, "Other", Var1)) %>%
+  summarise(Freq = sum(Freq), percent = sum(percent)) %>%
+ mutate(Var1 = fct_reorder(Var1, desc(percent))) %>%
+  mutate(Var1 = dplyr::recode(Var1,
+  "Computer Science" = "Computer\nScience",
+  "Communication" = "Commun-\nication",
+  "Psychology" = "Psych-\nology",
+  "Engineering" = "Engin-\neering"))
+
+discipline_tab <- rbind(discipline_tab, new_row)
+
+all_disciplines <- create_bar_graph(discipline_tab, "N.R.", "grey", "Discipline", "Percentage of Total Papers", "Discipline") +
+  theme(axis.text.x = element_text(size = 25, angle = 25),
+        axis.text.y = element_text(size = 25),
+        legend.position = "none")
+
+all_disciplines
+
+
+ggsave("all_disciplines.pdf", height = 10, width = 20)
+```
+### Application
+```{r}
+gg_application <- create_counts_dataframe(dat_pies_unique, "application_CODED")
+
+ggplot(gg_application, aes(x = Var1, y = percent, fill = Var1)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "RdBu") +
+  labs(x = "Application", y = "Percentage of Total Papers", fill = "Application") +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 20),
+        axis.text.x = element_text(size = 25, angle = 25),
+        legend.position = "none",
+        axis.text.y = element_text(size = 25),
+        axis.title.y = element_text(face = "bold", size = 25))
+
+ggsave("application_bar.pdf", width = 20, height = 10)
+```
+
+### Population
+```{r}
+gg_population <- create_counts_dataframe(dat_pies_unique, "population") %>%
+  group_by(Var1) %>%
+  mutate(Var1 = as.character(Var1)) %>%
+  mutate(Var1 = ifelse(percent < 1, "Other", Var1)) %>%
+  summarise(Freq = sum(Freq), percent = sum(percent)) %>%
+ mutate(Var1 = fct_reorder(Var1, desc(percent))) %>%
+  mutate(Var1 = dplyr::recode(Var1,
+                            "Cerebral Palsy" = "Cerebral\nPalsy",
+                            "Cognitively Impaired" = "Cognitively\nImpaired",
+                            "Multiple Irregularities" = "Multiple\nIrregularities")) 
+
+ggplot(gg_population, aes(x = Var1, y = percent, fill = Var1)) +
+  geom_bar(stat = "identity") +
+  scale_fill_brewer(palette = "RdBu") +
+  scale_x_discrete(labels = c("Neurotypical", "ASD", "Mixed", "Other", "Multiple\nIrregularities", "Cerbral\nPalsy", "Cognitively\nImpaired")) +
+  labs(x = "Population", y = "Percentage of Total Papers", fill = "Population") +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.text.x = element_text(size = 25, angle = 25),
+        axis.text.y = element_text(size = 25),
+        axis.title.x = element_text(face = "bold", size = 25),
+        axis.title.y = element_text(face = "bold", size = 25),
+                legend.position = "none")
+
+
+create_bar_graph(gg_population, "Other", "grey", "Population", "Percentage of Total Papers", "Population") +
+      theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.text.x = element_text(size = 25, angle = 25),
+        axis.text.y = element_text(size = 25),
+        axis.title.x = element_text(face = "bold", size = 25),
+        axis.title.y = element_text(face = "bold", size = 25),
+                legend.position = "none")
+
+ggsave("population_bar.pdf", width = 20, height = 10)
+```
+
+#### Graph of Proportions
+```{r}
+counts_mf <- hist(dat_mf$prop, breaks = 20, plot = FALSE)$counts
+total_mf <- sum(counts_mf)
+percentages_mf <- counts_mf / total_mf * 100
+
+ggplot(dat_mf, aes(x = prop)) +
+  geom_histogram(aes(y = after_stat(count)/sum(after_stat(count))), 
+                 fill = "#2166AC", colour = "black", bins = 20) +
+  labs(x = "Proportion of Male to Female Participants", y = "Percentage of Total Studies") +
+  scale_x_continuous(limits = c(0, 1), breaks = seq(0, 1, 0.1)) +
+  scale_y_continuous(labels = scales::percent) +
+  theme(
+    panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+    panel.background = element_rect(fill = "white"),
+    axis.title.x = element_text(face = "bold", size = 15),
+    axis.text.x = element_text(size = 15),
+    axis.text.y = element_text(size = 15),
+    axis.title.y = element_text(face = "bold", size = 15)
+  )
+
+  
+
+ggsave("gg_gender.pdf", height = 5)
+
+```
+
+### Sample Size
+```{r}
+dat_pies_unique$N_CODED <- as.numeric(dat_pies_unique$N_CODED)
+
+dat_sample <- dat_pies_unique %>%
+  dplyr::filter(N_CODED <= 50)
+
+ggplot(dat_pies_unique, aes(x = N_CODED)) +
+  geom_histogram(aes(y = after_stat(count)/sum(after_stat(count))), 
+                 fill = "#2166AC", colour = "black", bins = 50) +
+  labs(x = "Sample Size", y = "Percentage of Total Studies (N = 325)") +
+  scale_x_continuous(limits = c(1, 600), breaks = seq(0, 600, 50)) +
+  scale_y_continuous(labels = scales::percent) +
+   theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 15),
+        axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(face = "bold", size = 15))
+
+ggsave("sample_sizes.pdf", height = 5)
+
+dat_sample <- dat_pies_unique %>%
+  dplyr::filter(N_CODED <= 100)
+
+ggplot(dat_sample, aes(x = N_CODED)) +
+  geom_histogram(aes(y = after_stat(count)/sum(after_stat(count))),
+                 fill = "#2166AC", colour = "black", bins = 50) +
+  labs(x = "Sample Size", y = "Percentage of Studies with n < 100 (N = 263)") +
+  scale_x_continuous(limits = c(1, 100), breaks = seq(0, 100, 5)) +
+  scale_y_continuous(labels = scales::percent) +
+   theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 15),
+        axis.text.x = element_text(size = 15),
+        axis.text.y = element_text(size = 15),
+        axis.title.y = element_text(face = "bold", size = 15))
+
+
+ggsave("sample_100.pdf", height = 5)
+```
+
+
+
+
+
+
+
+```{r}
+robot_counts <- robot_counts %>%
+   mutate(percentage = n / sum(n) * 100)
+
+robot_counts$Var1 <- robot_counts$robot_CODED
+robot_counts$percent <- robot_counts$percentage
+
+robot_row <- data.frame(robot_CODED = "", n = 0, percentage = 0, Var1 = "", percent = 0)
+
+robot_counts <- rbind(robot_counts, robot_row)
+
+create_bar_graph(robot_counts, "N.R.", "grey", "Robot Model", "Percentage of Total Studies", "Robot Model") +
+geom_image(data = data.frame(x = "Nao", y = 40, image = "full-nao.png"),
+            aes(x = x, y = y, image = image, size = 0.15), inherit.aes = FALSE) +
+geom_image(data = data.frame(x = "Pepper", y = 12, image = "pepper.png"),
+            aes(x = x, y = y, image = image, size = 0.15), inherit.aes = FALSE) +
+  geom_image(data = data.frame(x = "Cozmo", y = 6, image = "cozmo.png"),
+            aes(x = x, y = y, image = image, size = 0.1), inherit.aes = FALSE) +
+  geom_image(data = data.frame(x = "Zeno", y = 7.5, image = "zeno.jpg"),
+            aes(x = x, y = y, image = image, size = 0.1), inherit.aes = FALSE) +
+  geom_image(data = data.frame(x = "Robovie", y = 7.5, image = "robovie.png"),
+            aes(x = x, y = y, image = image, size = 0.1), inherit.aes = FALSE) +
+  geom_image(data = data.frame(x = "Furhat", y = 5, image = "furhat.jpg"),
+            aes(x = x, y = y, image = image, size = 0.2), inherit.aes = FALSE) +
+            scale_size_identity() +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 20),
+        axis.text.x = element_text(size = 20, angle = 25),
+        legend.position = "none",
+        axis.text.y = element_text(size = 25),
+        axis.title.y = element_text(face = "bold", size = 20))
+
+ggsave("robot_models.pdf", width = 20, height =10)
+```
+
+```{r}
+dat_moi <- create_counts_dataframe(dat, "robot_interaction") %>%
+    mutate(Var1 = dplyr::recode(Var1,
+                           "real-life" = "Real\nLife",
+                           "video" = "Video",
+                           "life-mediated" = "Live-\nMediated",
+                           "picture" = "Picture",
+                           "virtual-agent" = "Virtual\nAgent",
+                           "augmented-reality" = "Augmented\nReality",
+                           "hybrid" = "Hybrid"))
+  
+
+create_bar_graph(dat_moi, "N.R.", "grey", "Mode of Interaction", "Percentage of Total Studies (N = 325)", "Mode of Interaction") +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 20),
+        axis.text.x = element_text(size = 20, angle = 25),
+        legend.position = "none",
+        axis.text.y = element_text(size = 25),
+        axis.title.y = element_text(face = "bold", size = 20))
+
+ggsave("interaction_mode.pdf", width = 20, height = 10)
+```
+
+```{r}
+operation_dat <- create_counts_dataframe(dat_operation, 1) %>%
+      mutate(Var1 = dplyr::recode(Var1,
+                           "WoZ" = "Wizard\nof\nOz",
+                           "A" = "Autonomous",
+                           "PS" = "Pre-\nscripted",
+                           "TO" = "Tele-\nOperated",
+                           "SA" = "Semi-\nAutonomous",
+                           "mixed" = "Mixed",
+                           "N.A." = "Not\nApplicable")) 
+
+
+create_bar_graph(operation_dat, "N.R.", "grey", "Mode of Operation", "Percentage of Total Studies (N = 325)", "Mode of Operation") +
+    theme(
+        panel.grid.major = element_line(color = "#E5E5E5", linetype = "solid", linewidth = 0.3),
+        panel.background = element_rect(fill = "white"),
+        axis.title.x = element_text(face = "bold", size = 20),
+        axis.text.x = element_text(size = 20, angle = 25),
+        legend.position = "none",
+        axis.text.y = element_text(size = 25),
+        axis.title.y = element_text(face = "bold", size = 20))
+
+ggsave("robot_operation.pdf", width = 20, height = 10)
+```
+
+
+
+
+
+
+
+
+
+
+
+
+
